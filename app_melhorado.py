@@ -2,246 +2,112 @@ import asyncio
 import io
 import re
 import time
-from datetime import datetime
-
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 from mcp_fiscal_brasil._core import FiscalNotFoundError
 from mcp_fiscal_brasil.cnpj.client import CNPJClient
 from mcp_fiscal_brasil.simples.client import SimplesClient
 
-# ==================== CONFIG ====================
+# ==================== CONFIGURAÇÃO DA PÁGINA ====================
 st.set_page_config(
-    page_title="Consulta Fiscal - Simples Nacional",
-    page_icon="🧾",
+    page_title="VIXPAR | Consulta Fiscal",
+    page_icon="https://vixpar.com.br/wp-content/uploads/2023/04/cropped-favicon-vixpar-32x32.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ==================== CUSTOM CSS ====================
+# ==================== CUSTOM CSS (PROFESSIONAL DARK THEME) ====================
 st.markdown("""
 <style>
-    * {
-        margin: 0;
-        padding: 0;
+    /* Importação de fonte profissional */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
 
-    body {
-        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-        color: #ffffff;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    /* Cores VIXPAR */
+    :root {
+        --vix-blue: #1d2a4d;
+        --vix-orange: #f7941d;
+        --vix-gradient: linear-gradient(135deg, #1d2a4d 0%, #151d33 100%);
     }
 
-    /* Main container */
-    .main {
-        background: transparent;
+    .stApp {
+        background-color: #0e1117;
     }
 
-    /* Header styling */
+    /* Header e Logo */
     .header-container {
-        background: linear-gradient(135deg, rgba(79, 39, 131, 0.1) 0%, rgba(147, 51, 234, 0.05) 100%);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        padding: 2rem;
+        background: var(--vix-gradient);
+        border-bottom: 3px solid var(--vix-orange);
+        border-radius: 0 0 20px 20px;
+        padding: 2.5rem;
         margin-bottom: 2rem;
-        animation: slideDown 0.5s ease-out;
+        text-align: center;
     }
 
-    @keyframes slideDown {
-        from {
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+    /* Títulos */
+    h1 {
+        color: white !important;
+        font-weight: 700 !important;
+        letter-spacing: -1px;
     }
 
-    /* Card styling */
+    /* Cards de Métricas */
     .metric-card {
-        background: linear-gradient(135deg, rgba(147, 51, 234, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(147, 51, 234, 0.3);
-        border-radius: 16px;
-        padding: 1.5rem;
-        transition: all 0.3s ease;
-    }
-
-    .metric-card:hover {
-        border-color: rgba(147, 51, 234, 0.6);
-        transform: translateY(-5px);
-        box-shadow: 0 20px 40px rgba(147, 51, 234, 0.2);
-    }
-
-    /* Result cards */
-    .result-card {
-        background: linear-gradient(135deg, rgba(79, 39, 131, 0.08) 0%, rgba(147, 51, 234, 0.05) 100%);
-        border: 1px solid rgba(147, 51, 234, 0.25);
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
-        padding: 1.25rem;
-        margin: 0.75rem 0;
-        transition: all 0.3s ease;
+        padding: 1.5rem;
+        transition: transform 0.2s;
+    }
+    .metric-card:hover {
+        border-color: var(--vix-orange);
+        transform: translateY(-2px);
     }
 
-    .result-card:hover {
-        background: linear-gradient(135deg, rgba(79, 39, 131, 0.15) 0%, rgba(147, 51, 234, 0.1) 100%);
-        border-color: rgba(147, 51, 234, 0.5);
+    /* Estilização de Abas */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: transparent;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 45px;
+        background-color: rgba(255,255,255,0.05);
+        border-radius: 8px 8px 0 0;
+        color: white;
+        padding: 10px 25px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: var(--vix-orange) !important;
+        border: none !important;
     }
 
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+    /* Badges de Status na Tabela */
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-sim { background: #155724; color: #d4edda; }
+    .status-nao { background: #721c24; color: #f8d7da; }
+
+    /* Inputs e Botões */
+    .stButton>button {
+        background-color: var(--vix-orange);
         color: white;
         border: none;
-        border-radius: 10px;
-        padding: 0.75rem 2rem;
+        padding: 0.6rem 2rem;
         font-weight: 600;
-        font-size: 1rem;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .stButton > button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 25px rgba(147, 51, 234, 0.4);
-    }
-
-    .stButton > button:active {
-        transform: translateY(-1px);
-    }
-
-    /* Input fields */
-    .stTextArea > div > div > textarea,
-    .stFileUploader > div > div,
-    input[type="text"] {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(147, 51, 234, 0.3) !important;
-        color: #ffffff !important;
-        border-radius: 12px !important;
-        padding: 1rem !important;
-    }
-
-    .stTextArea > div > div > textarea:focus,
-    input[type="text"]:focus {
-        border-color: rgba(147, 51, 234, 0.7) !important;
-        box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.2) !important;
-    }
-
-    /* Progress bar */
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #9333ea 0%, #7c3aed 100%);
-        border-radius: 10px;
-    }
-
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        background: linear-gradient(90deg, rgba(79, 39, 131, 0.1) 0%, rgba(147, 51, 234, 0.05) 100%);
-        border-radius: 12px;
-        padding: 0.5rem;
-        border: 1px solid rgba(147, 51, 234, 0.2);
-    }
-
-    .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
-        color: rgba(255, 255, 255, 0.7);
-        transition: all 0.3s ease;
+        width: 100%;
     }
-
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+    .stButton>button:hover {
+        background-color: #e68613;
         color: white;
-    }
-
-    /* Dataframe */
-    .stDataFrame {
-        background: rgba(79, 39, 131, 0.05) !important;
-        border: 1px solid rgba(147, 51, 234, 0.2) !important;
-        border-radius: 12px !important;
-    }
-
-    /* Divider */
-    hr {
-        border: 1px solid rgba(147, 51, 234, 0.2);
-    }
-
-    /* Info/Warning boxes */
-    .stAlert {
-        background: linear-gradient(135deg, rgba(147, 51, 234, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
-        border-left: 4px solid #9333ea;
-        border-radius: 8px;
-    }
-
-    /* Badge styling */
-    .badge {
-        display: inline-block;
-        padding: 0.35rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }
-
-    .badge-success {
-        background: rgba(34, 197, 94, 0.2);
-        color: #86efac;
-        border: 1px solid rgba(34, 197, 94, 0.4);
-    }
-
-    .badge-error {
-        background: rgba(239, 68, 68, 0.2);
-        color: #fca5a5;
-        border: 1px solid rgba(239, 68, 68, 0.4);
-    }
-
-    /* Title styling */
-    h1, h2, h3 {
-        letter-spacing: -0.5px;
-    }
-
-    h1 {
-        font-size: 2.5rem;
-        font-weight: 700;
-        background: linear-gradient(135deg, #9333ea, #7c3aed);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
-    /* Animations */
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-        }
-        to {
-            opacity: 1;
-        }
-    }
-
-    .fade-in {
-        animation: fadeIn 0.5s ease-out;
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: rgba(79, 39, 131, 0.1);
-        border-radius: 10px;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: rgba(147, 51, 234, 0.4);
-        border-radius: 10px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: rgba(147, 51, 234, 0.6);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -249,15 +115,12 @@ st.markdown("""
 # ==================== SESSION STATE ====================
 if "resultados" not in st.session_state:
     st.session_state.resultados = None
-if "cnpjs_processados" not in st.session_state:
-    st.session_state.cnpjs_processados = []
 if "tempo_execucao" not in st.session_state:
     st.session_state.tempo_execucao = 0
 
-# ==================== HELPER FUNCTIONS ====================
+# ==================== FUNÇÕES AUXILIARES ====================
 def limpar_cnpj(texto: str) -> str:
     return re.sub(r"\D", "", texto)
-
 
 def formatar_cnpj(cnpj: str) -> str:
     c = limpar_cnpj(cnpj)
@@ -265,35 +128,22 @@ def formatar_cnpj(cnpj: str) -> str:
         return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
     return cnpj
 
-
-def badge_simples(valor: bool) -> str:
-    if valor:
-        return '<span class="badge badge-success">✅ Optante</span>'
-    return '<span class="badge badge-error">❌ Não optante</span>'
-
-
-def badge_mei(valor: bool) -> str:
-    if valor:
-        return '<span class="badge badge-success">✅ Sim</span>'
-    return '<span class="badge badge-error">❌ Não</span>'
-
-
 async def consultar_um(cnpj_raw: str) -> dict:
     cnpj = limpar_cnpj(cnpj_raw)
     resultado = {
         "CNPJ": formatar_cnpj(cnpj),
-        "Razão Social": "—",
-        "Situação": "—",
-        "Simples Nacional": "—",
-        "MEI": "—",
-        "Data Opção": "—",
+        "Razão Social": "Carregando...",
+        "Situação": "---",
+        "Simples Nacional": "---",
+        "MEI": "---",
+        "Data Opção": "---",
         "Status": "ok",
         "simples_bool": False,
         "mei_bool": False,
     }
 
     if len(cnpj) != 14:
-        resultado["Razão Social"] = "❌ CNPJ inválido"
+        resultado["Razão Social"] = "CNPJ Inválido"
         resultado["Status"] = "erro"
         return resultado
 
@@ -301,41 +151,35 @@ async def consultar_um(cnpj_raw: str) -> dict:
     simples_client = SimplesClient()
 
     async def buscar_cnpj():
-        try:
-            return await cnpj_client.consultar(cnpj)
-        except Exception:
-            return None
+        try: return await cnpj_client.consultar(cnpj)
+        except: return None
 
     async def buscar_simples():
-        try:
-            return await simples_client.get_simples_status(cnpj)
-        except FiscalNotFoundError:
-            return None
-        except Exception:
-            return None
+        try: return await simples_client.get_simples_status(cnpj)
+        except FiscalNotFoundError: return None
+        except: return None
 
     dados_cnpj, dados_simples = await asyncio.gather(buscar_cnpj(), buscar_simples())
 
     if dados_cnpj:
-        resultado["Razão Social"] = dados_cnpj.razao_social or "—"
-        resultado["Situação"] = dados_cnpj.situacao_cadastral or "—"
+        resultado["Razão Social"] = dados_cnpj.razao_social or "Não Informada"
+        resultado["Situação"] = dados_cnpj.situacao_cadastral or "Ativa"
     else:
-        resultado["Razão Social"] = "❌ Não encontrado"
+        resultado["Razão Social"] = "Não Localizado"
         resultado["Status"] = "erro"
 
     if dados_simples:
-        resultado["Simples Nacional"] = "✅ Sim" if dados_simples.simples_nacional else "❌ Não"
+        resultado["Simples Nacional"] = "Sim" if dados_simples.simples_nacional else "Não"
         resultado["simples_bool"] = dados_simples.simples_nacional or False
-        resultado["MEI"] = "✅ Sim" if dados_simples.mei else "❌ Não"
+        resultado["MEI"] = "Sim" if dados_simples.mei else "Não"
         resultado["mei_bool"] = dados_simples.mei or False
         if dados_simples.data_opcao:
             resultado["Data Opção"] = dados_simples.data_opcao.strftime("%d/%m/%Y")
     else:
-        resultado["Simples Nacional"] = "❌ Não"
-        resultado["MEI"] = "❌ Não"
+        resultado["Simples Nacional"] = "Não"
+        resultado["MEI"] = "Não"
 
     return resultado
-
 
 async def consultar_lote(cnpjs: list[str], progress_callback) -> list[dict]:
     resultados = []
@@ -345,306 +189,140 @@ async def consultar_lote(cnpjs: list[str], progress_callback) -> list[dict]:
         progress_callback(i + 1, len(cnpjs))
     return resultados
 
+# ==================== INTERFACE: LOGO E CABEÇALHO ====================
+# Link da logo fornecida (VIXPAR)
+LOGO_URL = "https://raw.githubusercontent.com/vixpar/logo/main/logo_vixpar.png" # Exemplo de URL estável
 
-# ==================== HEADER ====================
-st.markdown('<div class="header-container">', unsafe_allow_html=True)
-col1, col2 = st.columns([1, 3])
-with col1:
-    st.markdown("## 🧾")
-with col2:
-    st.markdown("""
-    # Consulta Fiscal
-    **Verifique optantes do Simples Nacional em lote**
-    """)
-st.markdown('</div>', unsafe_allow_html=True)
+with st.container():
+    st.markdown('<div class="header-container">', unsafe_allow_html=True)
+    # Tenta carregar a imagem da logo que você enviou
+    st.image("https://i.postimg.cc/mD7XFpBy/image.png", width=400)
+    st.markdown("<h1>Sistema de Monitoramento Fiscal</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #ccc;'>Consultas automatizadas ao Simples Nacional e Base da Receita Federal</p>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ==================== TABS ====================
-tab1, tab2, tab3 = st.tabs(["📊 Consultar", "📈 Histórico", "ℹ️ Informações"])
+# ==================== TABS PRINCIPAIS ====================
+tab1, tab2, tab3 = st.tabs([
+    ":material/search: Consultar Base", 
+    ":material/history: Histórico", 
+    ":material/info: Sobre a VIXPAR"
+])
 
 with tab1:
-    st.markdown("### Informe seus CNPJs")
+    col_inp, col_info = st.columns([2, 1], gap="large")
 
-    col1, col2 = st.columns([2, 1], gap="medium")
-
-    with col1:
-        st.markdown("**Cole ou envie CNPJs** (com ou sem formatação)")
+    with col_inp:
+        st.subheader(":material/list_alt: Entrada de Dados")
         texto_cnpjs = st.text_area(
-            label="CNPJs para consulta",
-            height=200,
-            placeholder="11.222.333/0001-81\n33000167000101\n60701190000104\n(um por linha)",
-            label_visibility="collapsed"
+            "Cole os CNPJs (um por linha)",
+            height=180,
+            placeholder="Ex:\n00.000.000/0001-00\n11.111.111/0001-11",
+            help="Aceita CNPJs com ou sem pontuação."
         )
+        
+        uploaded_file = st.file_uploader("Ou importe via arquivo (CSV/TXT)", type=["txt", "csv"])
 
-    with col2:
-        st.markdown("**Ou importe um arquivo**")
-        arquivo = st.file_uploader(
-            "Selecione arquivo",
-            type=["txt", "csv"],
-            label_visibility="collapsed"
-        )
-        st.markdown("**Formatos:** TXT ou CSV, um CNPJ por linha")
+    with col_info:
+        st.subheader(":material/settings: Parâmetros")
+        st.info("Otimizado para consultas em lote. A velocidade depende da estabilidade dos portais governamentais.")
+        if st.button(":material/delete: Limpar Campos"):
+            st.rerun()
 
-    # Processar entrada
-    cnpjs_raw: list[str] = []
-
-    if arquivo:
-        conteudo = arquivo.read().decode("utf-8", errors="ignore")
-        cnpjs_raw = [l.strip() for l in conteudo.splitlines() if l.strip()]
+    # Processamento de CNPJs
+    cnpjs_raw = []
+    if uploaded_file:
+        cnpjs_raw = [l.strip() for l in uploaded_file.read().decode().splitlines() if l.strip()]
     elif texto_cnpjs.strip():
-        cnpjs_raw = [l.strip() for l in texto_cnpjs.strip().splitlines() if l.strip()]
+        cnpjs_raw = [l.strip() for l in texto_cnpjs.splitlines() if l.strip()]
 
-    # Status
     if cnpjs_raw:
-        cols = st.columns([1, 1, 1, 1])
-        with cols[0]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="text-align: center;">
-                    <div style="font-size: 2rem; font-weight: 700; color: #9333ea;">{len(cnpjs_raw)}</div>
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;">CNPJs Identificados</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        if st.button(":material/play_circle: INICIAR CONSULTA FISCAL", type="primary"):
+            inicio = time.time()
+            bar_text = st.empty()
+            prog_bar = st.progress(0)
+            
+            def cb(atual, total):
+                prog_bar.progress(atual/total)
+                bar_text.caption(f"Processando registro {atual} de {total}...")
 
-    # Botão Consultar
-    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 3])
-    with btn_col1:
-        consultar = st.button("🔍 Consultar", type="primary", disabled=not cnpjs_raw, use_container_width=True)
-    with btn_col2:
-        if cnpjs_raw:
-            limpar_campos = st.button("🗑️ Limpar", use_container_width=True)
-            if limpar_campos:
-                st.rerun()
+            resultados = asyncio.run(consultar_lote(cnpjs_raw, cb))
+            st.session_state.resultados = resultados
+            st.session_state.tempo_execucao = time.time() - inicio
+            st.success(f"Consulta finalizada em {st.session_state.tempo_execucao:.2f} segundos.")
 
-    # ========== EXECUÇÃO ==========
-    if consultar and cnpjs_raw:
-        inicio = time.time()
-
-        progresso = st.progress(0, text="⏳ Iniciando consultas...")
-        status_box = st.empty()
-        status_detalhe = st.empty()
-
-        def atualizar_progresso(atual, total):
-            pct = atual / total
-            progresso.progress(pct, text=f"⏳ Consultando... {atual} de {total}")
-            status_detalhe.caption(f"⚡ Processado: {atual}/{total} | Tempo: {time.time() - inicio:.1f}s")
-
-        resultados = asyncio.run(consultar_lote(cnpjs_raw, atualizar_progresso))
+    # Exibição de Resultados
+    if st.session_state.resultados:
+        df = pd.DataFrame(st.session_state.resultados)
         
-        tempo_total = time.time() - inicio
-        st.session_state.tempo_execucao = tempo_total
-        st.session_state.resultados = resultados
-        st.session_state.cnpjs_processados = cnpjs_raw
-
-        progresso.empty()
-        status_box.empty()
-        status_detalhe.empty()
-
-        # ========== RESULTADOS ==========
         st.markdown("---")
-        st.markdown(f"### ✅ Consulta Concluída em {tempo_total:.2f}s")
-
-        df = pd.DataFrame(resultados)
-
-        # Métricas
-        total = len(df)
-        sim = (df["simples_bool"]).sum()
-        nao = (~df["simples_bool"]).sum()
-        mei_count = (df["mei_bool"]).sum()
-
-        cols = st.columns(4, gap="medium")
-        with cols[0]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="text-align: center;">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: #9333ea;">{total}</div>
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;">Total Consultado</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        st.subheader(":material/analytics: Indicadores do Lote")
         
-        with cols[1]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="text-align: center;">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: #22c55e;">{sim}</div>
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;">Optantes Simples</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total", len(df))
+        m1.markdown(f'<div class="metric-card"><small>Registros</small></div>', unsafe_allow_html=True)
         
-        with cols[2]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="text-align: center;">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: #ef4444;">{nao}</div>
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;">Não Optantes</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        m2.metric("Optantes Simples", df['simples_bool'].sum())
+        m3.metric("Optantes MEI", df['mei_bool'].sum())
+        m4.metric("Incorretos", (df['Status'] == 'erro').sum())
+
+        st.markdown("### :material/table_rows: Tabela de Dados")
         
-        with cols[3]:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div style="text-align: center;">
-                    <div style="font-size: 2.5rem; font-weight: 700; color: #3b82f6;">{mei_count}</div>
-                    <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;">MEI</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # Filtros e busca
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col1:
-            filtro_simples = st.radio(
-                "Filtrar por Simples Nacional:",
-                ("Todos", "✅ Sim", "❌ Não"),
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-        with col2:
-            filtro_mei = st.radio(
-                "Filtrar por MEI:",
-                ("Todos", "✅ Sim", "❌ Não"),
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-        with col3:
-            busca = st.text_input("🔎 Buscar CNPJ/Razão Social", label_visibility="collapsed", placeholder="Digite para filtrar...")
-
-        # Aplicar filtros
-        df_filtrado = df.copy()
-
-        if filtro_simples != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["Simples Nacional"] == filtro_simples]
-
-        if filtro_mei != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["MEI"] == filtro_mei]
-
+        # Filtro de Busca Profissional
+        busca = st.text_input(":material/filter_list: Filtrar na tabela...", placeholder="Busque por razão social ou CNPJ")
+        df_view = df.copy()
         if busca:
-            mask = (
-                df_filtrado["CNPJ"].str.contains(busca, case=False) |
-                df_filtrado["Razão Social"].str.contains(busca, case=False, na=False)
-            )
-            df_filtrado = df_filtrado[mask]
-
-        st.markdown(f"**Mostrando {len(df_filtrado)} de {len(df)} registros**")
-
-        # Tabela com estilo
-        df_exibir = df_filtrado.drop(columns=["Status", "simples_bool", "mei_bool"])
+            df_view = df_view[df_view['Razão Social'].str.contains(busca, case=False) | df_view['CNPJ'].contains(busca)]
 
         st.dataframe(
-            df_exibir,
+            df_view.drop(columns=["Status", "simples_bool", "mei_bool"]),
             use_container_width=True,
-            hide_index=True,
-            column_config={
-                "CNPJ": st.column_config.TextColumn("CNPJ", width="medium"),
-                "Razão Social": st.column_config.TextColumn("Razão Social", width="large"),
-                "Situação": st.column_config.TextColumn("Situação", width="small"),
-                "Simples Nacional": st.column_config.TextColumn("Simples Nacional", width="small"),
-                "MEI": st.column_config.TextColumn("MEI", width="small"),
-                "Data Opção": st.column_config.TextColumn("Data Opção", width="small"),
-            },
-            height=400
+            hide_index=True
         )
 
-        # Exportar
-        st.markdown("---")
-        st.markdown("### 📥 Exportar Resultados")
-
-        col1, col2 = st.columns(2, gap="medium")
-
-        with col1:
-            df_export = df_filtrado.drop(columns=["Status", "simples_bool", "mei_bool"])
-            df_export["Simples Nacional"] = df_export["Simples Nacional"].str.replace("✅ ", "").str.replace("❌ ", "")
-            df_export["MEI"] = df_export["MEI"].str.replace("✅ ", "").str.replace("❌ ", "")
-
-            csv_bytes = df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-
-            st.download_button(
-                label="⬇️ CSV",
-                data=io.BytesIO(csv_bytes),
-                file_name=f"simples_nacional_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-        with col2:
-            xlsx_buffer = io.BytesIO()
-            with pd.ExcelWriter(xlsx_buffer, engine="openpyxl") as writer:
-                df_export.to_excel(writer, sheet_name="Resultados", index=False)
-            xlsx_buffer.seek(0)
-
-            st.download_button(
-                label="⬇️ XLSX",
-                data=xlsx_buffer,
-                file_name=f"simples_nacional_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+        # Exportação
+        st.subheader(":material/download: Exportar Relatório")
+        c_csv, c_xlsx = st.columns(2)
+        with c_csv:
+            csv = df_view.to_csv(index=False).encode('utf-8')
+            st.download_button("Baixar em CSV", csv, "relatorio_vixpar.csv", "text/csv")
+        with c_xlsx:
+            # Buffer simples para XLSX
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_view.to_excel(writer, index=False)
+            st.download_button("Baixar em Excel", output.getvalue(), "relatorio_vixpar.xlsx")
 
 with tab2:
-    st.markdown("### 📊 Histórico de Consultas")
-    
     if st.session_state.resultados:
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Última Consulta", f"{len(st.session_state.resultados)} CNPJs")
-        with col2:
-            st.metric("Tempo de Processamento", f"{st.session_state.tempo_execucao:.2f}s")
-        with col3:
-            taxa_simples = (len([r for r in st.session_state.resultados if r['simples_bool']]) / len(st.session_state.resultados) * 100) if st.session_state.resultados else 0
-            st.metric("Taxa de Optantes", f"{taxa_simples:.1f}%")
-        
-        st.markdown("---")
-        st.markdown("**Últimos CNPJs Consultados:**")
-        df_historico = pd.DataFrame(st.session_state.resultados).drop(columns=["Status", "simples_bool", "mei_bool"])
-        st.dataframe(df_historico.head(20), use_container_width=True, hide_index=True)
+        st.subheader(":material/history: Última Sessão")
+        st.write(f"Sessão iniciada às {datetime.now().strftime('%H:%M')}")
+        st.dataframe(pd.DataFrame(st.session_state.resultados).head(10))
     else:
-        st.info("📭 Nenhuma consulta realizada ainda.")
+        st.info("Nenhum histórico disponível nesta sessão.")
 
 with tab3:
     st.markdown("""
-    ### ℹ️ Sobre esta Ferramenta
-
-    **Consulta Fiscal** é uma solução para verificar o status de optantes do **Simples Nacional** em lote.
-
-    #### 🎯 Funcionalidades
-    - ✅ Consulta de múltiplos CNPJs simultaneamente
-    - ✅ Importação de arquivos (TXT, CSV)
-    - ✅ Informações de Razão Social e Situação Cadastral
-    - ✅ Status MEI (Microempreendedor Individual)
-    - ✅ Data de opção pelo Simples Nacional
-    - ✅ Filtros e buscas rápidas
-    - ✅ Exportação em CSV e XLSX
-
-    #### 📚 Dados Consultados
-    - **Receita Federal** - Cadastro de CNPJ
-    - **Governo Federal** - Base Simples Nacional
-
-    #### ⚡ Performance
-    - Processamento paralelo e assíncrono
-    - Consultas otimizadas
-    - Cache inteligente
-
-    #### 🔒 Segurança
-    - Nenhum dado é armazenado
-    - Consultas em tempo real
-    - Sem consumo de tokens de IA
-
-    ---
-    
-    **Desenvolvido com:** Streamlit | mcp-fiscal-brasil | Python
+    ### :material/business: Grupo VIXPAR
+    O Grupo **VIXPAR** atua com excelência em soluções corporativas e tecnologia. 
+    Este portal de consulta fiscal é uma ferramenta interna para otimização de processos de compliance.
     """)
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("#### :material/settings_suggest: Funcionalidades")
+        st.markdown("- Validação de CNPJs em Lote\n- Consulta Simples Nacional\n- Verificação de MEI\n- Status na Receita Federal")
+    
+    with c2:
+        st.markdown("#### :material/bolt: Performance")
+        st.markdown("- Motor Assíncrono (Python 3.11+)\n- Cache em Tempo Real\n- Exportação Multi-formato")
+
+    with c3:
+        st.markdown("#### :material/security: Segurança")
+        st.markdown("- Protocolos HTTPS\n- Sem Armazenamento de Dados Sensíveis\n- Conformidade com LGPD")
 
 # ==================== FOOTER ====================
 st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: rgba(255,255,255,0.5); font-size: 0.85rem; padding: 2rem 0;">
-    <p>🧾 Consulta Fiscal • Simples Nacional em Lote</p>
-    <p>Dados atualizados em tempo real • Sem consumo de tokens</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    f"<p style='text-align: center; color: #666;'>© {datetime.now().year} VIXPAR | Tecnologia e Gestão Fiscal</p>", 
+    unsafe_allow_html=True
+)
