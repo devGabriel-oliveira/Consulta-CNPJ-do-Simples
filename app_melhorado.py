@@ -49,20 +49,29 @@ st.markdown("""
         border-radius: 12px !important;
     }
 
-    /* Customização Discreta dos Botões Principais */
-    .stButton>button {
-        background: #f7941d !important;
+    /* Botão de Execução Super Destacado */
+    div.stButton > button:first-child {
+        background: linear-gradient(135deg, #f7941d 0%, #e58512 100%) !important;
         color: white !important;
         border: none !important;
-        font-weight: 600 !important;
-        border-radius: 8px !important;
-        transition: all 0.2s ease;
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        padding: 0.75rem 2rem !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 15px rgba(247, 148, 29, 0.4) !important;
+        transition: all 0.3s ease !important;
     }
     
-    .stButton>button:hover {
-        background: #e58512 !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(247, 148, 29, 0.3);
+    div.stButton > button:first-child:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(247, 148, 29, 0.6) !important;
+    }
+    
+    div.stButton > button:first-child:disabled {
+        background: rgba(255,255,255,0.1) !important;
+        color: rgba(255,255,255,0.3) !important;
+        box-shadow: none !important;
+        cursor: not-allowed !important;
     }
 
     /* Ajuste de Abas */
@@ -155,10 +164,8 @@ with st.container():
     col_logo, col_title = st.columns([1, 4])
     with col_logo:
         try:
-            # Tenta carregar a imagem local definida por você
             st.image("logo_vixpar.png", use_container_width=True)
         except Exception:
-            # Fallback elegante caso a imagem ainda não esteja na pasta ao testar
             st.markdown("### VIXPAR")
             
     with col_title:
@@ -189,38 +196,47 @@ with tab1:
         uploaded_file = st.file_uploader("Ou faça upload de um arquivo contendo os CNPJs (.txt, .csv)", type=["txt", "csv"])
 
     with col_side:
-        st.markdown("##### :material/tune: Opções")
-        st.caption("A ferramenta processará as requisições de forma assíncrona paralelamente para máxima performance.")
-        if st.button(":material/refresh: Limpar Dados", use_container_width=True):
+        st.markdown("##### :material/tune: Instruções")
+        st.caption("1. Adicione os CNPJs ao lado colando ou anexando.")
+        st.caption("2. Clique no botão destacado abaixo para disparar as buscas.")
+        if st.button(":material/refresh: Resetar Painel", use_container_width=True):
             st.session_state.resultados = None
             st.rerun()
 
-    # Processar inputs
+    # Tratamento e união de entradas (se colar E anexar, ele soma as duas listas)
     cnpjs_raw = []
     if uploaded_file:
-        cnpjs_raw = [l.strip() for l in uploaded_file.read().decode("utf-8", errors="ignore").splitlines() if l.strip()]
-    elif texto_cnpjs.strip():
-        cnpjs_raw = [l.strip() for l in texto_cnpjs.splitlines() if l.strip()]
+        cnpjs_raw.extend([l.strip() for l in uploaded_file.read().decode("utf-8", errors="ignore").splitlines() if l.strip()])
+    if texto_cnpjs.strip():
+        cnpjs_raw.extend([l.strip() for l in texto_cnpjs.splitlines() if l.strip()])
 
-    if cnpjs_raw:
-        st.markdown("---")
-        if st.button(":material/bolt: PROCESSAR LOTE AGORA", type="primary", use_container_width=True):
-            inicio = time.time()
-            bar_text = st.empty()
-            prog_bar = st.progress(0)
-            
-            def update_progress(atual, total):
-                prog_bar.progress(atual/total)
-                bar_text.caption(f"Processando: {atual} de {total} CNPJs analisados...")
+    # Remove duplicados mantendo a ordem
+    cnpjs_raw = list(dict.fromkeys(cnpjs_raw))
 
-            resultados = asyncio.run(consultar_lote(cnpjs_raw, update_progress))
-            st.session_state.resultados = resultados
-            st.session_state.tempo_execucao = time.time() - inicio
-            
-            bar_text.empty()
-            prog_bar.empty()
+    st.markdown("---")
+    
+    # Validação para habilitar ou desabilitar o botão destacado
+    botao_desabilitado = len(cnpjs_raw) == 0
+    texto_botao = f":material/bolt: PROCESSAR {len(cnpjs_raw)} CNPJs AGORA" if cnpjs_raw else ":material/lock: INSIRA CNPJS PARA PROCESSAR"
 
-    # Resultados da Consulta Ativa
+    # Botão de Execução Principal Destacado via CSS
+    if st.button(texto_botao, type="primary", use_container_width=True, disabled=botao_desabilitado):
+        inicio = time.time()
+        bar_text = st.empty()
+        prog_bar = st.progress(0)
+        
+        def update_progress(atual, total):
+            prog_bar.progress(atual/total)
+            bar_text.caption(f"Processando: {atual} de {total} CNPJs analisados...")
+
+        resultados = asyncio.run(consultar_lote(cnpjs_raw, update_progress))
+        st.session_state.resultados = resultados
+        st.session_state.tempo_execucao = time.time() - inicio
+        
+        bar_text.empty()
+        prog_bar.empty()
+
+    # Exibição das Respostas (Apenas se houver resultados gerados)
     if st.session_state.resultados:
         df = pd.DataFrame(st.session_state.resultados)
         
@@ -251,7 +267,7 @@ with tab1:
             hide_index=True
         )
 
-        # Seção de Exportação corrigida
+        # Seção de Exportação para Planilhas
         st.markdown("#### :material/download: Exportar Relatórios")
         c_csv, c_xlsx = st.columns(2)
         
@@ -268,7 +284,6 @@ with tab1:
             )
             
         with c_xlsx:
-            # Correção do Erro: Usando openpyxl explicitamente que é nativo e estável
             output_buffer = io.BytesIO()
             with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
                 df_export.to_excel(writer, index=False, sheet_name="Fiscal")
