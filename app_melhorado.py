@@ -11,103 +11,64 @@ from mcp_fiscal_brasil.simples.client import SimplesClient
 
 # ==================== CONFIGURAÇÃO DA PÁGINA ====================
 st.set_page_config(
-    page_title="VIXPAR | Consulta Fiscal",
-    page_icon="https://vixpar.com.br/wp-content/uploads/2023/04/cropped-favicon-vixpar-32x32.png",
+    page_title="VIXPAR | Portal Fiscal",
+    page_icon="🧾",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ==================== CUSTOM CSS (PROFESSIONAL DARK THEME) ====================
+# ==================== CUSTOM CSS (DESIGN SYSTEM CORPORATIVO) ====================
 st.markdown("""
 <style>
-    /* Importação de fonte profissional */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
     }
 
-    /* Cores VIXPAR */
+    /* Paleta de Cores VIXPAR */
     :root {
-        --vix-blue: #1d2a4d;
+        --vix-navy: #1d2a4d;
         --vix-orange: #f7941d;
-        --vix-gradient: linear-gradient(135deg, #1d2a4d 0%, #151d33 100%);
+        --bg-dark: #0e1117;
     }
 
-    .stApp {
-        background-color: #0e1117;
-    }
-
-    /* Header e Logo */
-    .header-container {
-        background: var(--vix-gradient);
-        border-bottom: 3px solid var(--vix-orange);
-        border-radius: 0 0 20px 20px;
-        padding: 2.5rem;
+    /* Container do Cabeçalho Moderno */
+    .brand-header {
+        background: linear-gradient(135deg, #1d2a4d 0%, #111930 100%);
+        border-radius: 16px;
+        padding: 2rem;
         margin-bottom: 2rem;
-        text-align: center;
+        border-left: 6px solid #f7941d;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
 
-    /* Títulos */
-    h1 {
-        color: white !important;
-        font-weight: 700 !important;
-        letter-spacing: -1px;
+    /* Estilização das Tabelas e Dataframes */
+    .stDataFrame {
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 12px !important;
     }
 
-    /* Cards de Métricas */
-    .metric-card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        padding: 1.5rem;
-        transition: transform 0.2s;
-    }
-    .metric-card:hover {
-        border-color: var(--vix-orange);
-        transform: translateY(-2px);
-    }
-
-    /* Estilização de Abas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background-color: transparent;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        background-color: rgba(255,255,255,0.05);
-        border-radius: 8px 8px 0 0;
-        color: white;
-        padding: 10px 25px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: var(--vix-orange) !important;
-        border: none !important;
-    }
-
-    /* Badges de Status na Tabela */
-    .status-badge {
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-    }
-    .status-sim { background: #155724; color: #d4edda; }
-    .status-nao { background: #721c24; color: #f8d7da; }
-
-    /* Inputs e Botões */
+    /* Customização Discreta dos Botões Principais */
     .stButton>button {
-        background-color: var(--vix-orange);
-        color: white;
-        border: none;
-        padding: 0.6rem 2rem;
-        font-weight: 600;
-        border-radius: 8px;
-        width: 100%;
+        background: #f7941d !important;
+        color: white !important;
+        border: none !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease;
     }
+    
     .stButton>button:hover {
-        background-color: #e68613;
-        color: white;
+        background: #e58512 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(247, 148, 29, 0.3);
+    }
+
+    /* Ajuste de Abas */
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 500;
+        padding: 12px 24px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -189,89 +150,100 @@ async def consultar_lote(cnpjs: list[str], progress_callback) -> list[dict]:
         progress_callback(i + 1, len(cnpjs))
     return resultados
 
-# ==================== INTERFACE: LOGO E CABEÇALHO ====================
-# Link da logo fornecida (VIXPAR)
-LOGO_URL = "https://raw.githubusercontent.com/vixpar/logo/main/logo_vixpar.png" # Exemplo de URL estável
-
+# ==================== CABEÇALHO BRANDING ====================
 with st.container():
-    st.markdown('<div class="header-container">', unsafe_allow_html=True)
-    # Tenta carregar a imagem da logo que você enviou
-    st.image("https://i.postimg.cc/mD7XFpBy/image.png", width=400)
-    st.markdown("<h1>Sistema de Monitoramento Fiscal</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #ccc;'>Consultas automatizadas ao Simples Nacional e Base da Receita Federal</p>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    col_logo, col_title = st.columns([1, 4])
+    with col_logo:
+        try:
+            # Tenta carregar a imagem local definida por você
+            st.image("logo_vixpar.png", use_container_width=True)
+        except Exception:
+            # Fallback elegante caso a imagem ainda não esteja na pasta ao testar
+            st.markdown("### VIXPAR")
+            
+    with col_title:
+        st.markdown("""
+        <div class="brand-header">
+            <h2 style='margin:0; padding:0; color:white;'>Monitoramento Fiscal Avançado</h2>
+            <p style='margin:5px 0 0 0; color:#b0bccc; font-size:0.95rem;'>Consulta em lote automatizada — Simples Nacional & Receita Federal</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ==================== TABS PRINCIPAIS ====================
-tab1, tab2, tab3 = st.tabs([
-    ":material/search: Consultar Base", 
-    ":material/history: Histórico", 
-    ":material/info: Sobre a VIXPAR"
+# ==================== ABAS DO SISTEMA ====================
+tab1, tab2 = st.tabs([
+    ":material/query_stats: Painel de Consulta", 
+    ":material/history: Histórico de Consultas"
 ])
 
 with tab1:
-    col_inp, col_info = st.columns([2, 1], gap="large")
+    col_inp, col_side = st.columns([2, 1], gap="large")
 
     with col_inp:
-        st.subheader(":material/list_alt: Entrada de Dados")
+        st.markdown("##### :material/input: Dados de Entrada")
         texto_cnpjs = st.text_area(
-            "Cole os CNPJs (um por linha)",
-            height=180,
-            placeholder="Ex:\n00.000.000/0001-00\n11.111.111/0001-11",
-            help="Aceita CNPJs com ou sem pontuação."
+            "Cole uma lista de CNPJs (um por linha)",
+            height=150,
+            placeholder="00.000.000/0001-00\n11111111000111",
+            label_visibility="collapsed"
         )
-        
-        uploaded_file = st.file_uploader("Ou importe via arquivo (CSV/TXT)", type=["txt", "csv"])
+        uploaded_file = st.file_uploader("Ou faça upload de um arquivo contendo os CNPJs (.txt, .csv)", type=["txt", "csv"])
 
-    with col_info:
-        st.subheader(":material/settings: Parâmetros")
-        st.info("Otimizado para consultas em lote. A velocidade depende da estabilidade dos portais governamentais.")
-        if st.button(":material/delete: Limpar Campos"):
+    with col_side:
+        st.markdown("##### :material/tune: Opções")
+        st.caption("A ferramenta processará as requisições de forma assíncrona paralelamente para máxima performance.")
+        if st.button(":material/refresh: Limpar Dados", use_container_width=True):
+            st.session_state.resultados = None
             st.rerun()
 
-    # Processamento de CNPJs
+    # Processar inputs
     cnpjs_raw = []
     if uploaded_file:
-        cnpjs_raw = [l.strip() for l in uploaded_file.read().decode().splitlines() if l.strip()]
+        cnpjs_raw = [l.strip() for l in uploaded_file.read().decode("utf-8", errors="ignore").splitlines() if l.strip()]
     elif texto_cnpjs.strip():
         cnpjs_raw = [l.strip() for l in texto_cnpjs.splitlines() if l.strip()]
 
     if cnpjs_raw:
-        if st.button(":material/play_circle: INICIAR CONSULTA FISCAL", type="primary"):
+        st.markdown("---")
+        if st.button(":material/bolt: PROCESSAR LOTE AGORA", type="primary", use_container_width=True):
             inicio = time.time()
             bar_text = st.empty()
             prog_bar = st.progress(0)
             
-            def cb(atual, total):
+            def update_progress(atual, total):
                 prog_bar.progress(atual/total)
-                bar_text.caption(f"Processando registro {atual} de {total}...")
+                bar_text.caption(f"Processando: {atual} de {total} CNPJs analisados...")
 
-            resultados = asyncio.run(consultar_lote(cnpjs_raw, cb))
+            resultados = asyncio.run(consultar_lote(cnpjs_raw, update_progress))
             st.session_state.resultados = resultados
             st.session_state.tempo_execucao = time.time() - inicio
-            st.success(f"Consulta finalizada em {st.session_state.tempo_execucao:.2f} segundos.")
+            
+            bar_text.empty()
+            prog_bar.empty()
 
-    # Exibição de Resultados
+    # Resultados da Consulta Ativa
     if st.session_state.resultados:
         df = pd.DataFrame(st.session_state.resultados)
         
-        st.markdown("---")
-        st.subheader(":material/analytics: Indicadores do Lote")
-        
+        st.markdown("### :material/analytics: Indicadores de Resumo")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total", len(df))
-        m1.markdown(f'<div class="metric-card"><small>Registros</small></div>', unsafe_allow_html=True)
         
-        m2.metric("Optantes Simples", df['simples_bool'].sum())
-        m3.metric("Optantes MEI", df['mei_bool'].sum())
-        m4.metric("Incorretos", (df['Status'] == 'erro').sum())
+        with m1:
+            st.metric("Total Processado", len(df))
+        with m2:
+            st.metric("Optantes Simples", int(df['simples_bool'].sum()))
+        with m3:
+            st.metric("Microempreendedores (MEI)", int(df['mei_bool'].sum()))
+        with m4:
+            st.metric("Tempo Total", f"{st.session_state.tempo_execucao:.2f}s")
 
-        st.markdown("### :material/table_rows: Tabela de Dados")
+        st.markdown("---")
+        st.markdown("### :material/table_chart: Dados Consolidados")
         
-        # Filtro de Busca Profissional
-        busca = st.text_input(":material/filter_list: Filtrar na tabela...", placeholder="Busque por razão social ou CNPJ")
+        # Filtro em tempo real dinâmico
+        busca = st.text_input(":material/search: Filtrar resultados na tela:", placeholder="Digite uma Razão Social ou CNPJ...")
         df_view = df.copy()
         if busca:
-            df_view = df_view[df_view['Razão Social'].str.contains(busca, case=False) | df_view['CNPJ'].contains(busca)]
+            df_view = df_view[df_view['Razão Social'].str.contains(busca, case=False) | df_view['CNPJ'].str.contains(busca)]
 
         st.dataframe(
             df_view.drop(columns=["Status", "simples_bool", "mei_bool"]),
@@ -279,50 +251,47 @@ with tab1:
             hide_index=True
         )
 
-        # Exportação
-        st.subheader(":material/download: Exportar Relatório")
+        # Seção de Exportação corrigida
+        st.markdown("#### :material/download: Exportar Relatórios")
         c_csv, c_xlsx = st.columns(2)
+        
+        df_export = df_view.drop(columns=["Status", "simples_bool", "mei_bool"])
+        
         with c_csv:
-            csv = df_view.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar em CSV", csv, "relatorio_vixpar.csv", "text/csv")
+            csv_data = df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+            st.download_button(
+                label="Salvar Planilha em CSV", 
+                data=csv_data, 
+                file_name="vixpar_relatorio_fiscal.csv", 
+                mime="text/csv",
+                use_container_width=True
+            )
+            
         with c_xlsx:
-            # Buffer simples para XLSX
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_view.to_excel(writer, index=False)
-            st.download_button("Baixar em Excel", output.getvalue(), "relatorio_vixpar.xlsx")
+            # Correção do Erro: Usando openpyxl explicitamente que é nativo e estável
+            output_buffer = io.BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name="Fiscal")
+            
+            st.download_button(
+                label="Salvar Planilha em Excel (XLSX)", 
+                data=output_buffer.getvalue(), 
+                file_name="vixpar_relatorio_fiscal.xlsx", 
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
 with tab2:
+    st.markdown("### :material/history_toggle_off: Histórico Recente")
     if st.session_state.resultados:
-        st.subheader(":material/history: Última Sessão")
-        st.write(f"Sessão iniciada às {datetime.now().strftime('%H:%M')}")
-        st.dataframe(pd.DataFrame(st.session_state.resultados).head(10))
+        st.caption("Abaixo constam os dados da última execução armazenados em cache temporário de sessão.")
+        st.dataframe(pd.DataFrame(st.session_state.resultados).drop(columns=["Status", "simples_bool", "mei_bool"]), use_container_width=True, hide_index=True)
     else:
-        st.info("Nenhum histórico disponível nesta sessão.")
+        st.info("Nenhuma consulta em lote executada nesta sessão.")
 
-with tab3:
-    st.markdown("""
-    ### :material/business: Grupo VIXPAR
-    O Grupo **VIXPAR** atua com excelência em soluções corporativas e tecnologia. 
-    Este portal de consulta fiscal é uma ferramenta interna para otimização de processos de compliance.
-    """)
-    
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### :material/settings_suggest: Funcionalidades")
-        st.markdown("- Validação de CNPJs em Lote\n- Consulta Simples Nacional\n- Verificação de MEI\n- Status na Receita Federal")
-    
-    with c2:
-        st.markdown("#### :material/bolt: Performance")
-        st.markdown("- Motor Assíncrono (Python 3.11+)\n- Cache em Tempo Real\n- Exportação Multi-formato")
-
-    with c3:
-        st.markdown("#### :material/security: Segurança")
-        st.markdown("- Protocolos HTTPS\n- Sem Armazenamento de Dados Sensíveis\n- Conformidade com LGPD")
-
-# ==================== FOOTER ====================
+# ==================== RODAPÉ ====================
 st.markdown("---")
 st.markdown(
-    f"<p style='text-align: center; color: #666;'>© {datetime.now().year} VIXPAR | Tecnologia e Gestão Fiscal</p>", 
+    f"<p style='text-align: center; color: #55637a; font-size: 0.85rem;'>© {datetime.now().year} VIXPAR — Setor de Inteligência e Compliance Fiscal</p>", 
     unsafe_allow_html=True
 )
