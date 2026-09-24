@@ -125,6 +125,49 @@ def bool_para_texto(valor: Any) -> str:
     return "N/D"
 
 
+def formatar_cnae(codigo: Any, descricao: str | None) -> str:
+    """
+    Formata CNAE no padrão 'XXXX-X/XX - Descrição'.
+    Aceita código como int (6204000) ou str ('6204000', '6204-0/00').
+    """
+    if codigo in (None, "", 0):
+        return "---"
+
+    codigo_str = str(codigo).replace("-", "").replace("/", "").replace(".", "")
+    codigo_str = "".join(c for c in codigo_str if c.isdigit())
+
+    # Formato padrão CNAE: 7 dígitos → XXXX-X/XX
+    if len(codigo_str) == 7:
+        codigo_fmt = f"{codigo_str[:4]}-{codigo_str[4]}/{codigo_str[5:]}"
+    else:
+        codigo_fmt = codigo_str or str(codigo)
+
+    if descricao:
+        return f"{codigo_fmt} - {descricao.strip()}"
+    return codigo_fmt
+
+
+def formatar_cnaes_secundarios(lista: list | None) -> tuple[int, str]:
+    """
+    Retorna (quantidade, texto_concatenado).
+    Aceita formatos MinhaReceita ({codigo, descricao}) e ReceitaWS ({code, text}).
+    """
+    if not lista or not isinstance(lista, list):
+        return 0, ""
+
+    itens = []
+    for item in lista:
+        if not isinstance(item, dict):
+            continue
+        codigo = item.get("codigo") or item.get("code")
+        descricao = item.get("descricao") or item.get("text")
+        if codigo in (None, "", 0, "00.00-0-00"):
+            continue
+        itens.append(formatar_cnae(codigo, descricao))
+
+    return len(itens), " | ".join(itens)
+
+
 # ==================== CLIENTE HTTP ====================
 async def _get_json(client: httpx.AsyncClient, url: str) -> tuple[dict | None, str | None]:
     """
@@ -191,8 +234,11 @@ def normalizar_brasilapi(data: dict) -> dict:
     Schema oficial:
         razao_social, descricao_situacao_cadastral,
         opcao_pelo_simples, data_opcao_pelo_simples, data_exclusao_do_simples,
-        opcao_pelo_mei, data_opcao_pelo_mei, data_exclusao_do_mei
+        opcao_pelo_mei, data_opcao_pelo_mei, data_exclusao_do_mei,
+        cnae_fiscal, cnae_fiscal_descricao, cnaes_secundarios
     """
+    qtd_sec, texto_sec = formatar_cnaes_secundarios(data.get("cnaes_secundarios"))
+
     return {
         "Razão Social":     data.get("razao_social", "").strip() or "---",
         "Situação":         (data.get("descricao_situacao_cadastral") or "---").upper(),
@@ -200,6 +246,9 @@ def normalizar_brasilapi(data: dict) -> dict:
         "MEI":              bool_para_texto(data.get("opcao_pelo_mei")),
         "Data Opção":       formatar_data_iso(data.get("data_opcao_pelo_simples")),
         "Data Opção MEI":   formatar_data_iso(data.get("data_opcao_pelo_mei")),
+        "CNAE Principal":   formatar_cnae(data.get("cnae_fiscal"), data.get("cnae_fiscal_descricao")),
+        "CNAEs Secundários": f"{qtd_sec} atividade(s)" if qtd_sec else "---",
+        "CNAEs Sec. (lista)": texto_sec,   # exportado no Excel/CSV, oculto na tela
         "simples_bool":     data.get("opcao_pelo_simples") is True,
         "mei_bool":         data.get("opcao_pelo_mei") is True,
         "fonte":            "BrasilAPI",
@@ -209,7 +258,8 @@ def normalizar_brasilapi(data: dict) -> dict:
 def normalizar_receitaws(data: dict) -> dict:
     """
     Extrai campos do ReceitaWS (schema diferente):
-        nome, situacao, simples: {optante, data_opcao, ...}, simei: {optante, ...}
+        nome, situacao, simples: {optante, data_opcao, ...}, simei: {optante, ...},
+        atividade_principal: [{code, text}], atividades_secundarias: [{code, text}]
     """
     simples = data.get("simples") if isinstance(data.get("simples"), dict) else {}
     simei = data.get("simei") if isinstance(data.get("simei"), dict) else {}
@@ -217,10 +267,19 @@ def normalizar_receitaws(data: dict) -> dict:
     def _fmt_data_br(s):
         if not s:
             return "---"
-        # ReceitaWS pode retornar "DD/MM/YYYY" ou "YYYY-MM-DD"
         if "/" in s:
             return s
         return formatar_data_iso(s)
+
+    # CNAE Principal — ReceitaWS retorna lista mesmo pra principal
+    cnae_principal = "---"
+    ativ_princ = data.get("atividade_principal") or []
+    if isinstance(ativ_princ, list) and ativ_princ:
+        primeiro = ativ_princ[0]
+        if isinstance(primeiro, dict):
+            cnae_principal = formatar_cnae(primeiro.get("code"), primeiro.get("text"))
+
+    qtd_sec, texto_sec = formatar_cnaes_secundarios(data.get("atividades_secundarias"))
 
     return {
         "Razão Social":     (data.get("nome") or "").strip() or "---",
@@ -229,6 +288,9 @@ def normalizar_receitaws(data: dict) -> dict:
         "MEI":              bool_para_texto(simei.get("optante")),
         "Data Opção":       _fmt_data_br(simples.get("data_opcao")),
         "Data Opção MEI":   _fmt_data_br(simei.get("data_opcao")),
+        "CNAE Principal":   cnae_principal,
+        "CNAEs Secundários": f"{qtd_sec} atividade(s)" if qtd_sec else "---",
+        "CNAEs Sec. (lista)": texto_sec,
         "simples_bool":     simples.get("optante") is True,
         "mei_bool":         simei.get("optante") is True,
         "fonte":            "ReceitaWS",
@@ -246,6 +308,9 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
         "MEI":              "---",
         "Data Opção":       "---",
         "Data Opção MEI":   "---",
+        "CNAE Principal":   "---",
+        "CNAEs Secundários": "---",
+        "CNAEs Sec. (lista)": "",
         "Fonte":            "---",
         "Status":           STATUS_OK,
         "Detalhes":         "",
@@ -272,6 +337,9 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "MEI":              norm["MEI"],
             "Data Opção":       norm["Data Opção"],
             "Data Opção MEI":   norm["Data Opção MEI"],
+            "CNAE Principal":   norm["CNAE Principal"],
+            "CNAEs Secundários": norm["CNAEs Secundários"],
+            "CNAEs Sec. (lista)": norm["CNAEs Sec. (lista)"],
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
@@ -295,6 +363,9 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "MEI":              norm["MEI"],
             "Data Opção":       norm["Data Opção"],
             "Data Opção MEI":   norm["Data Opção MEI"],
+            "CNAE Principal":   norm["CNAE Principal"],
+            "CNAEs Secundários": norm["CNAEs Secundários"],
+            "CNAEs Sec. (lista)": norm["CNAEs Sec. (lista)"],
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
@@ -527,6 +598,7 @@ def _renderizar_ui():
             colunas_visiveis = ["CNPJ", "Razão Social", "Situação",
                                 "Simples Nacional", "MEI",
                                 "Data Opção", "Data Opção MEI",
+                                "CNAE Principal", "CNAEs Secundários",
                                 "Fonte", "Status", "Detalhes"]
             df_display = df_view[colunas_visiveis]
 
@@ -538,7 +610,9 @@ def _renderizar_ui():
 
             st.markdown("#### :material/download: Exportar Relatórios")
             c_csv, c_xlsx = st.columns(2)
-            df_export = df_view[colunas_visiveis]
+            # No arquivo, incluímos a lista completa dos CNAEs secundários
+            colunas_export = colunas_visiveis + ["CNAEs Sec. (lista)"]
+            df_export = df_view[colunas_export]
 
             with c_csv:
                 csv_data = df_export.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -569,9 +643,9 @@ def _renderizar_ui():
                     ambar = PatternFill("solid", fgColor="FFE8CC")
                     vermelho = PatternFill("solid", fgColor="F8D7DA")
 
-                    idx_status = colunas_visiveis.index("Status")
-                    idx_sn = colunas_visiveis.index("Simples Nacional")
-                    idx_mei = colunas_visiveis.index("MEI")
+                    idx_status = colunas_export.index("Status")
+                    idx_sn = colunas_export.index("Simples Nacional")
+                    idx_mei = colunas_export.index("MEI")
 
                     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
                         s = row[idx_status].value
@@ -606,6 +680,7 @@ def _renderizar_ui():
             colunas_hist = ["CNPJ", "Razão Social", "Situação",
                             "Simples Nacional", "MEI",
                             "Data Opção", "Data Opção MEI",
+                            "CNAE Principal", "CNAEs Secundários",
                             "Fonte", "Status", "Detalhes"]
             st.dataframe(
                 df_hist[colunas_hist].style.apply(estilizar_linha, axis=1),
