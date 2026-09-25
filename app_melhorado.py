@@ -676,56 +676,59 @@ def _renderizar_ui():
 
             # ---- Copiar para Área de Transferência (colar no Excel) ----
             st.markdown("#### :material/content_copy: Copiar para Planilha")
-            st.caption("Clique para copiar a tabela em formato tabulado — cole diretamente no Excel ou Google Sheets.")
+            st.caption("Clique para copiar a tabela em formato tabulado — cole direto no Excel ou Google Sheets.")
+
+            import json as _json
 
             tsv_header = "\t".join(colunas_visiveis)
             tsv_rows = []
             for _, row in df_display.iterrows():
-                tsv_rows.append("\t".join(str(row.get(c, "")).replace("\t", " ").replace("\n", " ") for c in colunas_visiveis))
+                tsv_rows.append("\t".join(
+                    str(row.get(c, "")).replace("\t", " ").replace("\n", " ")
+                    for c in colunas_visiveis
+                ))
             tsv_text = tsv_header + "\n" + "\n".join(tsv_rows)
+            # Serializa como string JSON para escapar aspas/backticks/etc
+            tsv_json_safe = _json.dumps(tsv_text, ensure_ascii=False)
 
-            # Escapar para inserir no JS de forma segura
-            tsv_escaped = tsv_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-
-            copy_html = f"""
+            import streamlit.components.v1 as components
+            components.html(f"""
+            <html><body style="margin:0; font-family: 'Inter', sans-serif;">
             <button id="btn_copiar" onclick="copiarTabela()" style="
                 background: linear-gradient(135deg, #1d2a4d 0%, #111930 100%);
-                color: white; border: none; padding: 12px 24px; border-radius: 10px;
+                color: white; border: none; padding: 14px 24px; border-radius: 10px;
                 font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%;
                 box-shadow: 0 4px 12px rgba(29, 42, 77, 0.4);
-                transition: all 0.3s ease;
-            " onmouseover="this.style.transform='translateY(-2px)'"
-              onmouseout="this.style.transform='none'">
+            ">
                 📋 Copiar {len(df_display)} linha(s) para a Área de Transferência
             </button>
-            <span id="status_copia" style="color: #4CAF50; font-weight: 600; margin-left: 12px; display: none;">
-                ✅ Copiado!
-            </span>
+            <div id="status_copia" style="color: #4CAF50; font-weight: 600;
+                 text-align: center; margin-top: 8px; display: none;">
+                ✅ Copiado com sucesso!
+            </div>
             <script>
             function copiarTabela() {{
-                const texto = `{tsv_escaped}`;
-                navigator.clipboard.writeText(texto).then(() => {{
-                    const st = document.getElementById('status_copia');
-                    st.style.display = 'inline';
-                    setTimeout(() => st.style.display = 'none', 3000);
-                }}).catch(() => {{
-                    // Fallback para navegadores que bloqueiam clipboard
-                    const ta = document.createElement('textarea');
+                const texto = {tsv_json_safe};
+                navigator.clipboard.writeText(texto).then(mostrarSucesso).catch(function() {{
+                    var ta = document.createElement('textarea');
                     ta.value = texto;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
                     document.body.appendChild(ta);
                     ta.select();
                     document.execCommand('copy');
                     document.body.removeChild(ta);
-                    const st = document.getElementById('status_copia');
-                    st.style.display = 'inline';
-                    setTimeout(() => st.style.display = 'none', 3000);
+                    mostrarSucesso();
                 }});
             }}
+            function mostrarSucesso() {{
+                var el = document.getElementById('status_copia');
+                el.style.display = 'block';
+                setTimeout(function() {{ el.style.display = 'none'; }}, 3000);
+            }}
             </script>
-            """
-            st.markdown(copy_html, unsafe_allow_html=True)
-
-            st.markdown("")  # espaçamento
+            </body></html>
+            """, height=80)
 
             st.markdown("#### :material/download: Exportar Relatórios")
             c_csv, c_xlsx = st.columns(2)
