@@ -168,6 +168,51 @@ def formatar_cnaes_secundarios(lista: list | None) -> tuple[int, str]:
     return len(itens), " | ".join(itens)
 
 
+def formatar_cep(cep: Any) -> str:
+    """Formata CEP para XXXXX-XXX. Aceita '01310100', '01310-100', 1310100."""
+    if cep in (None, "", 0):
+        return "---"
+    apenas_digitos = "".join(c for c in str(cep) if c.isdigit())
+    if len(apenas_digitos) == 8:
+        return f"{apenas_digitos[:5]}-{apenas_digitos[5:]}"
+    return str(cep)
+
+
+def formatar_endereco(data: dict) -> str:
+    """
+    Monta o domicílio fiscal completo a partir dos campos individuais.
+    Funciona tanto para BrasilAPI/MinhaReceita quanto para ReceitaWS.
+    """
+    tipo = (data.get("descricao_tipo_de_logradouro") or "").strip()
+    logradouro = (data.get("logradouro") or "").strip()
+    numero = (data.get("numero") or data.get("número") or "").strip()
+    complemento = (data.get("complemento") or "").strip()
+    bairro = (data.get("bairro") or "").strip()
+    municipio = (data.get("municipio") or "").strip()
+    uf = (data.get("uf") or "").strip()
+
+    if tipo and logradouro and not logradouro.upper().startswith(tipo.upper()):
+        rua = f"{tipo} {logradouro}"
+    else:
+        rua = logradouro
+
+    partes = []
+    if rua:
+        parte1 = rua
+        if numero:
+            parte1 += f", {numero}"
+        if complemento:
+            parte1 += f" - {complemento}"
+        partes.append(parte1)
+    if bairro:
+        partes.append(bairro)
+    cidade_uf = ", ".join([p for p in [municipio, uf] if p])
+    if cidade_uf:
+        partes.append(cidade_uf)
+
+    return " • ".join(partes) if partes else "---"
+
+
 # ==================== CLIENTE HTTP ====================
 async def _get_json(client: httpx.AsyncClient, url: str) -> tuple[dict | None, str | None]:
     """
@@ -249,6 +294,10 @@ def normalizar_brasilapi(data: dict) -> dict:
         "CNAE Principal":   formatar_cnae(data.get("cnae_fiscal"), data.get("cnae_fiscal_descricao")),
         "CNAEs Secundários": f"{qtd_sec} atividade(s)" if qtd_sec else "---",
         "CNAEs Sec. (lista)": texto_sec,   # exportado no Excel/CSV, oculto na tela
+        "CEP":              formatar_cep(data.get("cep")),
+        "Município":        (data.get("municipio") or "---").upper() if data.get("municipio") else "---",
+        "UF":               (data.get("uf") or "---").upper() if data.get("uf") else "---",
+        "Domicílio Fiscal": formatar_endereco(data),
         "simples_bool":     data.get("opcao_pelo_simples") is True,
         "mei_bool":         data.get("opcao_pelo_mei") is True,
         "fonte":            "BrasilAPI",
@@ -291,6 +340,10 @@ def normalizar_receitaws(data: dict) -> dict:
         "CNAE Principal":   cnae_principal,
         "CNAEs Secundários": f"{qtd_sec} atividade(s)" if qtd_sec else "---",
         "CNAEs Sec. (lista)": texto_sec,
+        "CEP":              formatar_cep(data.get("cep")),
+        "Município":        (data.get("municipio") or "---").upper() if data.get("municipio") else "---",
+        "UF":               (data.get("uf") or "---").upper() if data.get("uf") else "---",
+        "Domicílio Fiscal": formatar_endereco(data),
         "simples_bool":     simples.get("optante") is True,
         "mei_bool":         simei.get("optante") is True,
         "fonte":            "ReceitaWS",
@@ -311,6 +364,10 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
         "CNAE Principal":   "---",
         "CNAEs Secundários": "---",
         "CNAEs Sec. (lista)": "",
+        "CEP":              "---",
+        "Município":        "---",
+        "UF":               "---",
+        "Domicílio Fiscal": "---",
         "Fonte":            "---",
         "Status":           STATUS_OK,
         "Detalhes":         "",
@@ -340,6 +397,10 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "CNAE Principal":   norm["CNAE Principal"],
             "CNAEs Secundários": norm["CNAEs Secundários"],
             "CNAEs Sec. (lista)": norm["CNAEs Sec. (lista)"],
+            "CEP":              norm["CEP"],
+            "Município":        norm["Município"],
+            "UF":               norm["UF"],
+            "Domicílio Fiscal": norm["Domicílio Fiscal"],
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
@@ -366,6 +427,10 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "CNAE Principal":   norm["CNAE Principal"],
             "CNAEs Secundários": norm["CNAEs Secundários"],
             "CNAEs Sec. (lista)": norm["CNAEs Sec. (lista)"],
+            "CEP":              norm["CEP"],
+            "Município":        norm["Município"],
+            "UF":               norm["UF"],
+            "Domicílio Fiscal": norm["Domicílio Fiscal"],
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
@@ -599,6 +664,7 @@ def _renderizar_ui():
                                 "Simples Nacional", "MEI",
                                 "Data Opção", "Data Opção MEI",
                                 "CNAE Principal", "CNAEs Secundários",
+                                "CEP", "Município", "UF", "Domicílio Fiscal",
                                 "Fonte", "Status", "Detalhes"]
             df_display = df_view[colunas_visiveis]
 
@@ -607,6 +673,59 @@ def _renderizar_ui():
                 use_container_width=True,
                 hide_index=True,
             )
+
+            # ---- Copiar para Área de Transferência (colar no Excel) ----
+            st.markdown("#### :material/content_copy: Copiar para Planilha")
+            st.caption("Clique para copiar a tabela em formato tabulado — cole diretamente no Excel ou Google Sheets.")
+
+            tsv_header = "\t".join(colunas_visiveis)
+            tsv_rows = []
+            for _, row in df_display.iterrows():
+                tsv_rows.append("\t".join(str(row.get(c, "")).replace("\t", " ").replace("\n", " ") for c in colunas_visiveis))
+            tsv_text = tsv_header + "\n" + "\n".join(tsv_rows)
+
+            # Escapar para inserir no JS de forma segura
+            tsv_escaped = tsv_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+
+            copy_html = f"""
+            <button id="btn_copiar" onclick="copiarTabela()" style="
+                background: linear-gradient(135deg, #1d2a4d 0%, #111930 100%);
+                color: white; border: none; padding: 12px 24px; border-radius: 10px;
+                font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%;
+                box-shadow: 0 4px 12px rgba(29, 42, 77, 0.4);
+                transition: all 0.3s ease;
+            " onmouseover="this.style.transform='translateY(-2px)'"
+              onmouseout="this.style.transform='none'">
+                📋 Copiar {len(df_display)} linha(s) para a Área de Transferência
+            </button>
+            <span id="status_copia" style="color: #4CAF50; font-weight: 600; margin-left: 12px; display: none;">
+                ✅ Copiado!
+            </span>
+            <script>
+            function copiarTabela() {{
+                const texto = `{tsv_escaped}`;
+                navigator.clipboard.writeText(texto).then(() => {{
+                    const st = document.getElementById('status_copia');
+                    st.style.display = 'inline';
+                    setTimeout(() => st.style.display = 'none', 3000);
+                }}).catch(() => {{
+                    // Fallback para navegadores que bloqueiam clipboard
+                    const ta = document.createElement('textarea');
+                    ta.value = texto;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    const st = document.getElementById('status_copia');
+                    st.style.display = 'inline';
+                    setTimeout(() => st.style.display = 'none', 3000);
+                }});
+            }}
+            </script>
+            """
+            st.markdown(copy_html, unsafe_allow_html=True)
+
+            st.markdown("")  # espaçamento
 
             st.markdown("#### :material/download: Exportar Relatórios")
             c_csv, c_xlsx = st.columns(2)
@@ -681,6 +800,7 @@ def _renderizar_ui():
                             "Simples Nacional", "MEI",
                             "Data Opção", "Data Opção MEI",
                             "CNAE Principal", "CNAEs Secundários",
+                            "CEP", "Município", "UF", "Domicílio Fiscal",
                             "Fonte", "Status", "Detalhes"]
             st.dataframe(
                 df_hist[colunas_hist].style.apply(estilizar_linha, axis=1),
