@@ -115,14 +115,13 @@ def bool_para_texto(valor: Any) -> str:
     """
     Converte o campo opcao_pelo_simples/mei da API para texto exibível.
     - True  → 'Sim'
-    - False → 'Não'
-    - None  → 'N/D' (não declarado pela Receita)
+    - False / None → 'Não'
+      (MinhaReceita retorna null para empresas que nunca optaram;
+       na prática fiscal, ausência de registro = não optante)
     """
     if valor is True:
         return "Sim"
-    if valor is False:
-        return "Não"
-    return "N/D"
+    return "Não"
 
 
 def formatar_cnae(codigo: Any, descricao: str | None) -> str:
@@ -300,6 +299,7 @@ def normalizar_brasilapi(data: dict) -> dict:
         "Domicílio Fiscal": formatar_endereco(data),
         "simples_bool":     data.get("opcao_pelo_simples") is True,
         "mei_bool":         data.get("opcao_pelo_mei") is True,
+        "tipo_empresa":     "MEI" if data.get("opcao_pelo_mei") is True else ("Simples" if data.get("opcao_pelo_simples") is True else "Normal"),
         "fonte":            "BrasilAPI",
     }
 
@@ -346,6 +346,7 @@ def normalizar_receitaws(data: dict) -> dict:
         "Domicílio Fiscal": formatar_endereco(data),
         "simples_bool":     simples.get("optante") is True,
         "mei_bool":         simei.get("optante") is True,
+        "tipo_empresa":     "MEI" if simei.get("optante") is True else ("Simples" if simples.get("optante") is True else "Normal"),
         "fonte":            "ReceitaWS",
     }
 
@@ -373,6 +374,7 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
         "Detalhes":         "",
         "simples_bool":     False,
         "mei_bool":         False,
+        "Tipo Empresa":     "---",
         "cnpj_raw":         cnpj,
     }
 
@@ -404,6 +406,7 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
+            "Tipo Empresa":     norm["tipo_empresa"],
         })
         return resultado
 
@@ -434,6 +437,7 @@ async def consultar_um(client: httpx.AsyncClient, cnpj_raw: str) -> dict:
             "Fonte":            norm["fonte"],
             "simples_bool":     norm["simples_bool"],
             "mei_bool":         norm["mei_bool"],
+            "Tipo Empresa":     norm["tipo_empresa"],
             "Status":           STATUS_ERRO_FALLBACK,
             "Detalhes":         f"BrasilAPI: {erro} → usou ReceitaWS",
         })
@@ -661,6 +665,7 @@ def _renderizar_ui():
                 df_view = df_view[(df_view["simples_bool"]) | (df_view["mei_bool"])]
 
             colunas_visiveis = ["CNPJ", "Razão Social", "Situação",
+                                "Tipo Empresa",
                                 "Simples Nacional", "MEI",
                                 "Data Opção", "Data Opção MEI",
                                 "CNAE Principal", "CNAEs Secundários",
@@ -800,6 +805,7 @@ def _renderizar_ui():
             st.caption("Abaixo constam os dados da última execução armazenados em cache temporário de sessão.")
             df_hist = pd.DataFrame(st.session_state.resultados)
             colunas_hist = ["CNPJ", "Razão Social", "Situação",
+                            "Tipo Empresa",
                             "Simples Nacional", "MEI",
                             "Data Opção", "Data Opção MEI",
                             "CNAE Principal", "CNAEs Secundários",
